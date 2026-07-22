@@ -4,8 +4,18 @@ DOMAIN = "ihanoi_live_snapshot"
 
 CONF_CAMERAS = "cameras"
 
+# How often (minutes) to auto re-fetch the camera list/wss_url table in the background,
+# on top of the manual "Update Camera List" button -- the wss_url session tokens embedded
+# in it expire, and a stale entry is what makes button.press/image capture start failing
+# with "Never saw a VPS NAL" or a bare connection timeout. 0 disables the background
+# refresh (manual button only, the original behavior).
+CONF_UPDATE_INTERVAL = "update_interval_minutes"
+DEFAULT_UPDATE_INTERVAL_MINUTES = 60
+UPDATE_INTERVAL_OPTIONS = [0, 15, 30, 60, 120, 240]
+
 # Bundled, pre-shipped camera lookup table (camera_id -> name/address/lat-lng/wss_url).
-# Refreshed in place by the "Update Camera List" button; see device.py.
+# Refreshed in place by the "Update Camera List" button or the periodic refresh above;
+# see device.py.
 CAMERA_LIST_FILENAME = "ihanoi_camera.json"
 
 API_URL = (

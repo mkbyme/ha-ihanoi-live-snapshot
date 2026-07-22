@@ -5,12 +5,17 @@
         "title": "Select iHanoi cameras",
         "description": "Choose which cameras to add to Home Assistant. You can add/remove cameras later from this integration's Options.",
         "data": {
-          "cameras": "Cameras"
+          "cameras": "Cameras",
+          "update_interval_minutes": "Camera list auto-refresh interval (minutes)"
+        },
+        "data_description": {
+          "update_interval_minutes": "The camera list's wss_url session tokens expire; set to 0 to disable auto-refresh and rely only on the 'Update Camera List' button."
         }
       }
     },
     "error": {
-      "no_cameras_selected": "Please select at least one camera."
+      "no_cameras_selected": "Please select at least one camera.",
+      "invalid_update_interval": "Update interval must be a non-negative whole number of minutes."
     },
     "abort": {
       "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]"
@@ -21,12 +26,17 @@
       "init": {
         "title": "Update selected cameras",
         "data": {
-          "cameras": "Cameras"
+          "cameras": "Cameras",
+          "update_interval_minutes": "Camera list auto-refresh interval (minutes)"
+        },
+        "data_description": {
+          "update_interval_minutes": "The camera list's wss_url session tokens expire; set to 0 to disable auto-refresh and rely only on the 'Update Camera List' button."
         }
       }
     },
     "error": {
-      "no_cameras_selected": "Please select at least one camera."
+      "no_cameras_selected": "Please select at least one camera.",
+      "invalid_update_interval": "Update interval must be a non-negative whole number of minutes."
     }
   }
 }

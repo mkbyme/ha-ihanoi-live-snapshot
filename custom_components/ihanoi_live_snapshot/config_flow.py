@@ -19,11 +19,26 @@ from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import selector
 
 from . import api
-from .const import CAMERA_LIST_FILENAME, CONF_CAMERAS, DOMAIN
+from .const import (
+    CAMERA_LIST_FILENAME,
+    CONF_CAMERAS,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL_MINUTES,
+    DOMAIN,
+    UPDATE_INTERVAL_OPTIONS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
 _CAMERA_LIST_PATH = Path(__file__).parent / CAMERA_LIST_FILENAME
+
+_UPDATE_INTERVAL_SELECTOR = selector.SelectSelector(
+    selector.SelectSelectorConfig(
+        options=[str(minutes) for minutes in UPDATE_INTERVAL_OPTIONS],
+        mode=selector.SelectSelectorMode.DROPDOWN,
+        custom_value=True,
+    )
+)
 
 
 def _camera_selector(cameras: dict[str, dict[str, Any]]) -> selector.SelectSelector:
@@ -44,6 +59,20 @@ def _camera_selector(cameras: dict[str, dict[str, Any]]) -> selector.SelectSelec
 def _display_label(camera_id: str, camera: dict[str, Any]) -> str:
     name = camera.get("name") or camera_id
     return f"{name} ({camera_id})"
+
+
+def _parse_update_interval(raw: str, errors: dict[str, str]) -> int:
+    """Parse the (possibly custom-typed) update-interval selector value. On failure,
+    records an error under "base" and returns a harmless placeholder -- callers must check
+    `errors` before using the return value."""
+    try:
+        minutes = int(raw)
+        if minutes < 0:
+            raise ValueError
+    except ValueError:
+        errors["base"] = "invalid_update_interval"
+        return 0
+    return minutes
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -72,17 +101,24 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             cameras = user_input[CONF_CAMERAS]
+            update_interval = _parse_update_interval(user_input[CONF_UPDATE_INTERVAL], self._errors)
             if not cameras:
                 self._errors["base"] = "no_cameras_selected"
-            else:
+            elif not self._errors:
                 return self.async_create_entry(
-                    title="iHanoi Live Snapshot", data={CONF_CAMERAS: cameras}
+                    title="iHanoi Live Snapshot",
+                    data={CONF_CAMERAS: cameras, CONF_UPDATE_INTERVAL: update_interval},
                 )
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
-                {vol.Required(CONF_CAMERAS, default=[]): _camera_selector(self._cameras)}
+                {
+                    vol.Required(CONF_CAMERAS, default=[]): _camera_selector(self._cameras),
+                    vol.Required(
+                        CONF_UPDATE_INTERVAL, default=str(DEFAULT_UPDATE_INTERVAL_MINUTES)
+                    ): _UPDATE_INTERVAL_SELECTOR,
+                }
             ),
             errors=self._errors,
         )
@@ -105,18 +141,31 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         current = self._config_entry.options.get(
             CONF_CAMERAS, self._config_entry.data.get(CONF_CAMERAS, [])
         )
+        current_interval = self._config_entry.options.get(
+            CONF_UPDATE_INTERVAL,
+            self._config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_MINUTES),
+        )
 
         if user_input is not None:
             selected = user_input[CONF_CAMERAS]
+            update_interval = _parse_update_interval(user_input[CONF_UPDATE_INTERVAL], self._errors)
             if not selected:
                 self._errors["base"] = "no_cameras_selected"
-            else:
-                return self.async_create_entry(title="", data={CONF_CAMERAS: selected})
+            elif not self._errors:
+                return self.async_create_entry(
+                    title="",
+                    data={CONF_CAMERAS: selected, CONF_UPDATE_INTERVAL: update_interval},
+                )
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
-                {vol.Required(CONF_CAMERAS, default=current): _camera_selector(cameras)}
+                {
+                    vol.Required(CONF_CAMERAS, default=current): _camera_selector(cameras),
+                    vol.Required(
+                        CONF_UPDATE_INTERVAL, default=str(current_interval)
+                    ): _UPDATE_INTERVAL_SELECTOR,
+                }
             ),
             errors=self._errors,
         )

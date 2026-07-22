@@ -4,7 +4,9 @@
   meant to be called from automations. Pressing it captures a fresh snapshot and pushes
   it to that camera's image entity.
 - `IhanoiCameraListRefreshButton`: one per config entry -- re-fetches
-  ihanoi_camera.json from the live API (the wss_url session tokens it contains expire).
+  ihanoi_camera.json from the live API (the wss_url session tokens it contains expire)
+  and then re-captures every selected camera's snapshot, so there's no need to also
+  press each camera's own Update button afterward.
 """
 from __future__ import annotations
 

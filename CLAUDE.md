@@ -4,11 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status and goal
 
-The task (`README.md`, in Vietnamese) was to build a HACS integration for Home Assistant,
-based on the algorithm reverse-engineered in `working/`, modeled structurally on the
-sibling repo `ha-toanthanggps-com`. That integration is now scaffolded at
-`custom_components/ihanoi_live_snapshot/` (domain `ihanoi_live_snapshot`). Two things to
-have loaded before touching it further:
+The original task brief (Vietnamese; see `git show 2f4444b:README.md` -- the initial
+commit, before `README.md` became the user-facing HACS readme it is now) was to build a
+HACS integration for Home Assistant, based on the algorithm reverse-engineered in
+`working/`, modeled structurally on the sibling repo `ha-toanthanggps-com`. That
+integration is now scaffolded at `custom_components/ihanoi_live_snapshot/` (domain
+`ihanoi_live_snapshot`). Two things to have loaded before touching it further:
 
 1. **The wire protocol and working prototype** — `working/` (see below). This directory is
    listed in `.gitignore` (`/working`), so it is intentionally untracked/local-only —
@@ -24,16 +25,25 @@ have loaded before touching it further:
 
 ## `custom_components/ihanoi_live_snapshot/` — the integration
 
-No `DataUpdateCoordinator`/polling anywhere in this integration — snapshots are captured
-only on demand (a button press), so there's nothing to poll on a schedule. State instead
+No `DataUpdateCoordinator`/polling for the snapshot images themselves — a capture only
+happens on demand (a button press), so there's nothing to poll on a schedule there. State
 flows: button press → `IhanoiSnapshotAccount.async_update_camera()` → dispatcher signal →
 the paired image entity re-renders. Keep this in mind before reaching for a coordinator
-pattern here; it doesn't fit.
+pattern for the image/button entities; it doesn't fit.
 
-- `const.py` — domain, `CONF_CAMERAS`, the bundled camera-list filename, the iHanoi API
-  URL, WS handshake constants (`CLIENT_HELLO = "mobile:"`, user-agent), `MAX_NAME_LENGTH`
-  (100 — entity/device names are the camera's `name` from `ihanoi_camera.json`, truncated
-  to this per the task brief), and the dispatcher signal name template.
+The one thing that *does* poll is the camera list/`wss_url` table: those session tokens
+expire, and a stale one is what makes `button.press` fail with "Never saw a VPS NAL" or a
+bare connection timeout (see `device.py`'s `async_setup_periodic_refresh`/`CONF_UPDATE_INTERVAL`
+below) — that's a `DataUpdateCoordinator` on a `config_entry`-scoped timer, deliberately
+mirroring the `ha-toanthanggps-com` sibling's `ToanThangGpsAccount.async_create_coordinator`
+pattern, just for a different purpose (refreshing a lookup table, not entity state).
+
+- `const.py` — domain, `CONF_CAMERAS`, `CONF_UPDATE_INTERVAL`/`DEFAULT_UPDATE_INTERVAL_MINUTES`/
+  `UPDATE_INTERVAL_OPTIONS` (camera-list auto-refresh cadence; 0 disables it, manual button
+  only), the bundled camera-list filename, the iHanoi API URL, WS handshake constants
+  (`CLIENT_HELLO = "mobile:"`, user-agent), `MAX_NAME_LENGTH` (100 — entity/device names are
+  the camera's `name` from `ihanoi_camera.json`, truncated to this per the task brief), and
+  the dispatcher signal name template.
 - `hevc.py` — ported from `working/ihanoi_hevc.py` almost verbatim: the 12-byte per-message
   framing header, NAL type constants, and `KeyframeCollector` (state machine: waits for a
   VPS(32)/SPS(33)/PPS(34) run, collects the IDR slice(s) that follow, flags itself `done`
@@ -50,19 +60,36 @@ pattern here; it doesn't fit.
   Home Assistant core dependency — avoids adding a `requirements` entry to `manifest.json`.
   `async_capture_snapshot` bounds the whole connect-send-collect loop in one
   `asyncio.timeout()` rather than relying on a per-call socket timeout.
-- `device.py` — `IhanoiSnapshotAccount`: not a coordinator, just the runtime store for one
-  config entry. Holds the camera lookup table (loaded from the bundled
-  `ihanoi_camera.json`), a `CameraSnapshot(image, last_updated)` per selected camera_id,
-  `async_update_camera()` (capture + store + `async_dispatcher_send`), and
+- `device.py` — `IhanoiSnapshotAccount`: not a coordinator for the image/button entities,
+  just the runtime store for one config entry. Holds the camera lookup table (loaded from
+  the bundled `ihanoi_camera.json`), a `CameraSnapshot(image, last_updated)` per selected
+  camera_id, `async_update_camera()` (capture + store + `async_dispatcher_send`), and
   `async_refresh_camera_list()` (re-fetch from the live API, overwrite the bundled file in
-  place). Also centralizes `camera_display_name()`/`device_info()` (name truncation +
-  `DeviceInfo` construction) so `image.py`/`button.py` don't duplicate that logic.
+  place, *then* `asyncio.gather()` an `async_update_camera()` for every selected camera_id
+  so a stale/expired `wss_url` gets fixed and re-captured in the same call -- per-camera
+  capture failures are logged, not raised, so one flaky camera doesn't fail the whole
+  list refresh). Also centralizes `camera_display_name()`/`device_info()` (name truncation
+  + `DeviceInfo` construction) so `image.py`/`button.py` don't duplicate that logic.
+  `async_setup_periodic_refresh(entry)` is the one actual coordinator in this integration:
+  it builds a `DataUpdateCoordinator[None]` (`config_entry=entry`, `update_method=`
+  `self.async_refresh_camera_list`) on a `timedelta(minutes=self._update_interval_minutes)`
+  interval, called from `__init__.py`'s `async_setup_entry` right after the initial
+  `async_load_camera_list()`. It's a no-op (`self.coordinator` stays `None`) when the
+  configured interval is 0. Uses `coordinator.async_refresh()`, not
+  `async_config_entry_first_refresh()`, on purpose — the bundled JSON is already a working
+  fallback, so a network hiccup on this initial background refresh shouldn't block entry
+  setup with `ConfigEntryNotReady`.
 - `config_flow.py` — single step (`user`): a `SelectSelector` (DROPDOWN, `multiple=True`)
   built from the bundled camera list — no login/API call needed for setup, unlike the
-  ToanThang sibling. `manifest.json` sets `"single_config_entry": true` (HA's built-in
-  singleton mechanism), so there's no manual `_abort_if_unique_id_configured` dance here.
-  `OptionsFlowHandler` re-shows the same selector (live-reloaded from the bundled file, in
-  case the list-refresh button changed it) to add/remove cameras later.
+  ToanThang sibling — plus a second `SelectSelector` (DROPDOWN, `custom_value=True`,
+  options from `UPDATE_INTERVAL_OPTIONS`) for `CONF_UPDATE_INTERVAL`, mirroring the
+  ToanThang sibling's `_SCAN_INTERVAL_SELECTOR`/`SCAN_INTERVAL_OPTIONS`. `manifest.json`
+  sets `"single_config_entry": true` (HA's built-in singleton mechanism), so there's no
+  manual `_abort_if_unique_id_configured` dance here. `OptionsFlowHandler` re-shows both
+  selectors (camera list live-reloaded from the bundled file, in case the list-refresh
+  button changed it) to change the camera selection or the refresh interval later — a
+  change reloads the entry (`async_update_listener`), which re-creates the coordinator
+  with the new interval.
 - `image.py` — `IhanoiSnapshotImage(ImageEntity)`, one per selected camera_id.
   `_attr_should_poll = False`; `async_image()` just returns the account's cached bytes for
   that camera_id. Listens for `f"{SIGNAL_CAMERA_UPDATED}_{camera_id}"` via
@@ -71,7 +98,9 @@ pattern here; it doesn't fit.
 - `button.py` — two entity classes: `IhanoiSnapshotUpdateButton` (one per camera — the
   "update trigger... callable via automation" from the task brief; `async_press()` just
   calls `account.async_update_camera(camera_id)`) and `IhanoiCameraListRefreshButton` (one
-  per config entry, `EntityCategory.CONFIG`, calls `account.async_refresh_camera_list()`).
+  per config entry, `EntityCategory.CONFIG`, calls `account.async_refresh_camera_list()` --
+  which, per above, also re-captures every selected camera's snapshot, so pressing this one
+  button is enough after a list refresh instead of also pressing each camera's own button).
   Both wrap failures in `HomeAssistantError` so they surface cleanly in the UI/automation
   traces instead of as a bare stack trace.
 - `ihanoi_camera.json` — the bundled/"mang đi sẵn" (pre-shipped) camera table, a copy of

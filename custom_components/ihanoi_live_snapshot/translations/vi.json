@@ -5,12 +5,17 @@
         "title": "Chọn camera iHanoi",
         "description": "Chọn các camera muốn thêm vào Home Assistant. Có thể thêm/bớt sau trong phần Cấu hình (Options) của tích hợp.",
         "data": {
-          "cameras": "Camera"
+          "cameras": "Camera",
+          "update_interval_minutes": "Chu kỳ tự động cập nhật danh sách camera (phút)"
+        },
+        "data_description": {
+          "update_interval_minutes": "Danh sách camera chứa wss_url có thời hạn sử dụng; đặt 0 để tắt tự động cập nhật và chỉ dùng nút 'Update Camera List'."
         }
       }
     },
     "error": {
-      "no_cameras_selected": "Vui lòng chọn ít nhất một camera."
+      "no_cameras_selected": "Vui lòng chọn ít nhất một camera.",
+      "invalid_update_interval": "Chu kỳ cập nhật phải là một số nguyên không âm (phút)."
     },
     "abort": {
       "single_instance_allowed": "Chỉ được phép có một cấu hình cho tích hợp này."
@@ -21,12 +26,17 @@
       "init": {
         "title": "Cập nhật danh sách camera đã chọn",
         "data": {
-          "cameras": "Camera"
+          "cameras": "Camera",
+          "update_interval_minutes": "Chu kỳ tự động cập nhật danh sách camera (phút)"
+        },
+        "data_description": {
+          "update_interval_minutes": "Danh sách camera chứa wss_url có thời hạn sử dụng; đặt 0 để tắt tự động cập nhật và chỉ dùng nút 'Update Camera List'."
         }
       }
     },
     "error": {
-      "no_cameras_selected": "Vui lòng chọn ít nhất một camera."
+      "no_cameras_selected": "Vui lòng chọn ít nhất một camera.",
+      "invalid_update_interval": "Chu kỳ cập nhật phải là một số nguyên không âm (phút)."
     }
   }
 }
