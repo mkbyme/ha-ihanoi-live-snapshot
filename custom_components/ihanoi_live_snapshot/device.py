@@ -41,6 +41,11 @@ _LOGGER = logging.getLogger(__name__)
 class CameraSnapshot:
     image: bytes | None = None
     last_updated: datetime | None = None
+    last_error: str | None = None
+    online: bool | None = None
+    """Whether the last capture attempt succeeded -- None means no attempt has been made
+    yet (entry just started up), so the binary_sensor can report "unknown" rather than a
+    misleading on/off before the first capture."""
 
 
 class IhanoiSnapshotAccount:
@@ -109,8 +114,14 @@ class IhanoiSnapshotAccount:
                     result,
                 )
 
-    async def async_update_camera(self, camera_id: str) -> None:
-        """Capture and store a fresh snapshot for one camera, then notify its entities."""
+    async def async_update_camera(self, camera_id: str) -> bool:
+        """Capture and store a fresh snapshot for one camera, then notify its entities.
+
+        Returns True if a new image was captured, False if the camera was down / returned
+        no data. In the latter case the previously captured image is deliberately kept
+        (never overwritten with None) so the image entity doesn't go blank or error -- the
+        failure is only recorded on `snapshot.last_error` and surfaced by the "Last Update"
+        sensor. Only a genuine misconfiguration (camera_id not in the list) still raises."""
         camera = self.cameras.get(camera_id)
         if camera is None or not camera.get("wss_url"):
             raise RuntimeError(
@@ -118,11 +129,41 @@ class IhanoiSnapshotAccount:
                 "press 'Update Camera List' first."
             )
 
-        image = await api.async_capture_snapshot(self.hass, camera["wss_url"])
         snapshot = self.snapshots.setdefault(camera_id, CameraSnapshot())
+        # Timestamp burned into the image (local time) and stored on the snapshot.
+        now = dt_util.now()
+        label = now.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            image = await api.async_capture_snapshot(
+                self.hass, camera["wss_url"], label=label
+            )
+        except Exception as err:  # noqa: BLE001 -- camera down / bad wss_url / decode fail
+            snapshot.last_error = str(err)
+            snapshot.online = False
+            _LOGGER.warning(
+                "Snapshot capture failed for %s; keeping the previous image: %s",
+                camera_id,
+                err,
+            )
+            async_dispatcher_send(self.hass, f"{SIGNAL_CAMERA_UPDATED}_{camera_id}")
+            return False
+
+        if not image:
+            snapshot.last_error = "Camera returned no snapshot data."
+            snapshot.online = False
+            _LOGGER.warning(
+                "Snapshot capture returned no data for %s; keeping the previous image.",
+                camera_id,
+            )
+            async_dispatcher_send(self.hass, f"{SIGNAL_CAMERA_UPDATED}_{camera_id}")
+            return False
+
         snapshot.image = image
-        snapshot.last_updated = dt_util.utcnow()
+        snapshot.last_updated = now
+        snapshot.last_error = None
+        snapshot.online = True
         async_dispatcher_send(self.hass, f"{SIGNAL_CAMERA_UPDATED}_{camera_id}")
+        return True
 
     def camera_display_name(self, camera_id: str) -> str:
         camera = self.cameras.get(camera_id)

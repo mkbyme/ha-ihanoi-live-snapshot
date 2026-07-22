@@ -15,7 +15,10 @@ keyframe picture as complete.
 """
 from __future__ import annotations
 
+import logging
 import subprocess
+
+_LOGGER = logging.getLogger(__name__)
 
 START_CODE = b"\x00\x00\x00\x01"
 PREFIX_LEN = 12
@@ -77,23 +80,57 @@ def build_annexb(nals: list[bytes]) -> bytes:
     return b"".join(START_CODE + nal for nal in nals)
 
 
-def decode_first_frame_to_png(annexb_bytes: bytes) -> bytes:
+def _escape_drawtext(text: str) -> str:
+    """Escape the characters ffmpeg's drawtext filter treats specially, so a timestamp
+    like ``2026-07-22 15:30:45`` survives the filtergraph parser intact (the colons in
+    particular would otherwise be read as option separators)."""
+    return (
+        text.replace("\\", r"\\")
+        .replace(":", r"\:")
+        .replace("'", r"\'")
+        .replace("%", r"\%")
+    )
+
+
+def _run_ffmpeg(args: list[str], annexb_bytes: bytes) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        args, input=annexb_bytes, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+
+
+def decode_first_frame_to_png(annexb_bytes: bytes, label: str | None = None) -> bytes:
     """Decode the first frame of an Annex-B HEVC elementary stream to PNG bytes via ffmpeg.
+
+    If ``label`` is given (e.g. the capture timestamp), it's burned into the bottom-right
+    corner of the image via ffmpeg's ``drawtext`` filter. That filter needs a usable font
+    (libfreetype + fontconfig); if it isn't available in this environment we don't want to
+    lose the snapshot, so we retry once without the overlay and just log a warning.
 
     Blocking (spawns a subprocess) -- always call this through
     hass.async_add_executor_job, never directly from the event loop.
     """
-    proc = subprocess.run(
-        [
-            "ffmpeg", "-y", "-v", "error",
-            "-f", "hevc", "-i", "pipe:0",
-            "-frames:v", "1", "-update", "1",
-            "-f", "image2", "-c:v", "png", "pipe:1",
-        ],
-        input=annexb_bytes,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    head = ["ffmpeg", "-y", "-v", "error", "-f", "hevc", "-i", "pipe:0",
+            "-frames:v", "1", "-update", "1"]
+    tail = ["-f", "image2", "-c:v", "png", "pipe:1"]
+
+    args = list(head)
+    if label:
+        args += [
+            "-vf",
+            f"drawtext=text='{_escape_drawtext(label)}'"
+            ":fontcolor=white:fontsize=20:box=1:boxcolor=black@0.5"
+            ":boxborderw=6:x=w-tw-10:y=h-th-10",
+        ]
+    args += tail
+
+    proc = _run_ffmpeg(args, annexb_bytes)
+    if proc.returncode != 0 and label:
+        _LOGGER.warning(
+            "ffmpeg drawtext overlay failed (%s); decoding without the timestamp label.",
+            proc.stderr.decode(errors="replace").strip(),
+        )
+        proc = _run_ffmpeg(head + tail, annexb_bytes)
+
     if proc.returncode != 0:
         raise RuntimeError(
             f"ffmpeg failed to decode the extracted NAL units: "

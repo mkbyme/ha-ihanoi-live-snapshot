@@ -51,7 +51,12 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   differs from the prototype's `decode_first_frame`: it pipes ffmpeg's PNG output back
   through stdout as bytes (`-f image2 -c:v png pipe:1`) instead of writing to a file path,
   since `ImageEntity` needs in-memory bytes, not a file. Still a blocking subprocess call —
-  only ever invoked through `hass.async_add_executor_job`.
+  only ever invoked through `hass.async_add_executor_job`. Takes an optional `label`
+  (the capture timestamp): when set, it's burned into the bottom-right corner via ffmpeg's
+  `drawtext` filter — `_escape_drawtext` escapes the colons/backslashes so a `HH:MM:SS`
+  string survives the filtergraph parser. `drawtext` needs a font (libfreetype/fontconfig),
+  which may be absent in some HA containers, so a `drawtext`-failed decode is retried once
+  *without* the overlay rather than losing the snapshot entirely.
 - `api.py` — camera-list fetch/table-building (ported from
   `working/update_ihanoi_camera_list.py`) plus live snapshot capture (ported from
   `working/snapshot_ihanoi_livecamera.py`'s connect/send-hello/read-until-done loop). One
@@ -62,9 +67,9 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   `asyncio.timeout()` rather than relying on a per-call socket timeout.
 - `device.py` — `IhanoiSnapshotAccount`: not a coordinator for the image/button entities,
   just the runtime store for one config entry. Holds the camera lookup table (loaded from
-  the bundled `ihanoi_camera.json`), a `CameraSnapshot(image, last_updated)` per selected
-  camera_id, `async_update_camera()` (capture + store + `async_dispatcher_send`), and
-  `async_refresh_camera_list()` (re-fetch from the live API, overwrite the bundled file in
+  the bundled `ihanoi_camera.json`), a `CameraSnapshot(image, last_updated, last_error)` per
+  selected camera_id, `async_update_camera()` (capture + store + `async_dispatcher_send`),
+  and `async_refresh_camera_list()` (re-fetch from the live API, overwrite the bundled file in
   place, *then* `asyncio.gather()` an `async_update_camera()` for every selected camera_id
   so a stale/expired `wss_url` gets fixed and re-captured in the same call -- per-camera
   capture failures are logged, not raised, so one flaky camera doesn't fail the whole
@@ -95,6 +100,18 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   that camera_id. Listens for `f"{SIGNAL_CAMERA_UPDATED}_{camera_id}"` via
   `async_dispatcher_connect` in `async_added_to_hass` to know when to
   `async_write_ha_state()` — there's no other trigger for this entity to update itself.
+  Failure handling lives in `device.py`'s `async_update_camera()`: a camera that's down /
+  returns no data does **not** overwrite the cached bytes (that would blank the entity and
+  trigger HA image errors) — it records `CameraSnapshot.last_error`, fires the dispatcher
+  signal anyway (so the sensor's `last_error` attribute updates), and returns `False`. Only
+  a genuine misconfig (camera_id absent from the list) still raises. So `image.py` keeps
+  its last good frame across an outage; `last_updated` (hence the sensor below) only
+  advances on a *successful* capture.
+- `sensor.py` — `IhanoiLastUpdateSensor(SensorEntity)`, one per camera,
+  `SensorDeviceClass.TIMESTAMP` + `EntityCategory.DIAGNOSTIC`. `native_value` is the
+  snapshot's `last_updated` (tz-aware `dt_util.now()`), with `last_error` exposed as an
+  extra state attribute so automations can detect a down camera even though the button no
+  longer raises for that case. Same dispatcher-signal-driven update pattern as `image.py`.
 - `button.py` — two entity classes: `IhanoiSnapshotUpdateButton` (one per camera — the
   "update trigger... callable via automation" from the task brief; `async_press()` just
   calls `account.async_update_camera(camera_id)`) and `IhanoiCameraListRefreshButton` (one
@@ -102,7 +119,9 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   which, per above, also re-captures every selected camera's snapshot, so pressing this one
   button is enough after a list refresh instead of also pressing each camera's own button).
   Both wrap failures in `HomeAssistantError` so they surface cleanly in the UI/automation
-  traces instead of as a bare stack trace.
+  traces instead of as a bare stack trace — but note the per-camera button only *raises*
+  for a real misconfig now; a merely-down camera makes `async_update_camera()` return
+  `False`, which the button just logs (the previous image is kept — see `image.py` above).
 - `ihanoi_camera.json` — the bundled/"mang đi sẵn" (pre-shipped) camera table, a copy of
   `working/ihanoi_camera.json`. Read by `config_flow.py` (for the dropdown) and
   `device.py` (at entry setup); overwritten in place by

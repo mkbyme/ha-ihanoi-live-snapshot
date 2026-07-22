@@ -80,10 +80,14 @@ async def async_fetch_camera_list(hass: HomeAssistant) -> dict[str, dict[str, An
 
 
 async def async_capture_snapshot(
-    hass: HomeAssistant, wss_url: str, timeout: float = DEFAULT_CAPTURE_TIMEOUT
+    hass: HomeAssistant,
+    wss_url: str,
+    timeout: float = DEFAULT_CAPTURE_TIMEOUT,
+    label: str | None = None,
 ) -> bytes:
     """Open the camera's live WebSocket, collect exactly one full keyframe (stopping the
-    instant it's assembled), and decode it to PNG bytes."""
+    instant it's assembled), and decode it to PNG bytes. When ``label`` is given it's burned
+    into the image as a timestamp overlay (see hevc.decode_first_frame_to_png)."""
     session = async_get_clientsession(hass)
     collector = KeyframeCollector()
 
@@ -102,4 +106,4 @@ async def async_capture_snapshot(
         raise RuntimeError("Never saw a VPS NAL (type 32) before the connection ended.")
 
     annexb = build_annexb(collector.nals)
-    return await hass.async_add_executor_job(decode_first_frame_to_png, annexb)
+    return await hass.async_add_executor_job(decode_first_frame_to_png, annexb, label)

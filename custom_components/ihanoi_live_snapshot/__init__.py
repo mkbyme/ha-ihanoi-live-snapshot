@@ -6,7 +6,7 @@ from homeassistant.core import HomeAssistant
 from .const import CONF_CAMERAS, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_MINUTES, DOMAIN
 from .device import IhanoiSnapshotAccount
 
-PLATFORMS = ["image", "button"]
+PLATFORMS = ["image", "button", "sensor", "binary_sensor"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

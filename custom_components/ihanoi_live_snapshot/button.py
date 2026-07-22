@@ -63,11 +63,18 @@ class IhanoiSnapshotUpdateButton(ButtonEntity):
 
     async def async_press(self) -> None:
         try:
-            await self._account.async_update_camera(self._camera_id)
+            updated = await self._account.async_update_camera(self._camera_id)
         except Exception as err:
+            # Only a genuine misconfiguration (camera_id not in the list) raises now --
+            # surface that. A camera merely being down returns False instead (below).
             raise HomeAssistantError(
                 f"Failed to capture a snapshot for {self._camera_id}: {err}"
             ) from err
+        if not updated:
+            _LOGGER.warning(
+                "Camera %s appears to be down; kept the previous snapshot image.",
+                self._camera_id,
+            )
 
 
 class IhanoiCameraListRefreshButton(ButtonEntity):
