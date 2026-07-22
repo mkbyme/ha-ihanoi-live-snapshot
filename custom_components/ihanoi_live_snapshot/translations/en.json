@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Select iHanoi cameras",
+        "description": "Choose which cameras to add to Home Assistant. You can add/remove cameras later from this integration's Options.",
+        "data": {
+          "cameras": "Cameras"
+        }
+      }
+    },
+    "error": {
+      "no_cameras_selected": "Please select at least one camera."
+    },
+    "abort": {
+      "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update selected cameras",
+        "data": {
+          "cameras": "Cameras"
+        }
+      }
+    },
+    "error": {
+      "no_cameras_selected": "Please select at least one camera."
+    }
+  }
+}

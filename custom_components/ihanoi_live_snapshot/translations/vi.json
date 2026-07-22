@@ -1,0 +1,32 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Chọn camera iHanoi",
+        "description": "Chọn các camera muốn thêm vào Home Assistant. Có thể thêm/bớt sau trong phần Cấu hình (Options) của tích hợp.",
+        "data": {
+          "cameras": "Camera"
+        }
+      }
+    },
+    "error": {
+      "no_cameras_selected": "Vui lòng chọn ít nhất một camera."
+    },
+    "abort": {
+      "single_instance_allowed": "Chỉ được phép có một cấu hình cho tích hợp này."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Cập nhật danh sách camera đã chọn",
+        "data": {
+          "cameras": "Camera"
+        }
+      }
+    },
+    "error": {
+      "no_cameras_selected": "Vui lòng chọn ít nhất một camera."
+    }
+  }
+}

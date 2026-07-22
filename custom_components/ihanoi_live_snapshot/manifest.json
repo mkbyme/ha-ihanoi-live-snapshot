@@ -1,0 +1,13 @@
+{
+  "domain": "ihanoi_live_snapshot",
+  "name": "iHanoi Live Snapshot",
+  "codeowners": ["@mkbyme"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/mkbyme/ha-ihanoi-live-snapshot",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/mkbyme/ha-ihanoi-live-snapshot/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}
