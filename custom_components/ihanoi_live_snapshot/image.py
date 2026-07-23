@@ -43,6 +43,9 @@ class IhanoiSnapshotImage(ImageEntity):
         self._camera_id = camera_id
         self._attr_unique_id = f"{camera_id}_image".lower()
         self.entity_id = f"{ENTITY_DOMAIN}.{camera_id}_image".lower()
+        # Reflect a persisted/restored snapshot (see device.py's
+        # async_load_persisted_snapshots) immediately, not just on the next capture.
+        self._attr_image_last_updated = account.snapshots[camera_id].last_updated
 
     @property
     def name(self) -> str:

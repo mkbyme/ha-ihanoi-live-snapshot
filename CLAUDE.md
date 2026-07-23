@@ -73,14 +73,44 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   `asyncio.timeout()` rather than relying on a per-call socket timeout.
 - `device.py` — `IhanoiSnapshotAccount`: not a coordinator for the image/button entities,
   just the runtime store for one config entry. Holds the camera lookup table (loaded from
-  the bundled `ihanoi_camera.json`), a `CameraSnapshot(image, last_updated, last_error)` per
-  selected camera_id, `async_update_camera()` (capture + store + `async_dispatcher_send`),
+  the bundled `ihanoi_camera.json`), a `CameraSnapshot(image, last_updated, last_error, online)`
+  per selected camera_id, `async_update_camera()` (capture + store + `async_dispatcher_send`),
   and `async_refresh_camera_list()` (re-fetch from the live API, overwrite the bundled file in
   place, *then* `asyncio.gather()` an `async_update_camera()` for every selected camera_id
   so a stale/expired `wss_url` gets fixed and re-captured in the same call -- per-camera
   capture failures are logged, not raised, so one flaky camera doesn't fail the whole
   list refresh). Also centralizes `camera_display_name()`/`device_info()` (name truncation
   + `DeviceInfo` construction) so `image.py`/`button.py` don't duplicate that logic.
+
+  A camera that's down disappears from the live API response entirely -- that's the
+  iHanoi API's own "it's offline" signal, not a fetch bug. `async_refresh_camera_list()`
+  accounts for this: for any selected `camera_id` missing from the freshly fetched table,
+  it carries over that camera_id's *previous* entry (name/`wss_url`/etc.) into the table
+  that gets saved and applied, instead of dropping it -- otherwise `self.cameras` loses the
+  entry, `camera_display_name()` falls back to the raw id, `available` (in
+  `image.py`/`sensor.py`/`binary_sensor.py`/`button.py`, all `camera_id in account.cameras`)
+  goes `False`, and `async_update_camera()` raises a spurious "not found" instead of a
+  normal offline result. For camera_ids missing from *this* fetch specifically, it also
+  skips the real capture attempt (which would otherwise hang for the full capture timeout
+  on a `wss_url` already known to be stale) and calls `_mark_camera_offline()` instead --
+  sets `online=False`/`last_error`, dispatches, but leaves the cached name and the last
+  captured image bytes untouched, and does not move `last_updated` (that timestamp is
+  strictly "last *successful* capture").
+
+  Snapshot state also survives a real HA restart now, not just a config-entry
+  reload/options change (which keeps this Python object, and therefore `self.snapshots`,
+  alive in memory the whole time) -- `async_load_persisted_snapshots()` (called from
+  `__init__.py`'s `async_setup_entry`, before platforms are forwarded, so entities read
+  restored state on their first render) restores each selected camera's
+  image/last_updated/last_error/online from a per-entry `homeassistant.helpers.storage.Store`
+  (key `f"{DOMAIN}_{entry_id}_snapshots"`, image bytes base64-encoded since `Store` writes
+  JSON). `_async_save_snapshots()` writes the whole thing back after every state change
+  (`async_update_camera()`'s three exits, `_mark_camera_offline()`) -- no debouncing, since
+  captures only happen on demand/every-N-minutes, not in a hot loop. Module-level
+  `async_remove_persisted_snapshots(hass, entry_id)` deletes that store file; wired into
+  `__init__.py`'s `async_remove_entry` so uninstalling the integration doesn't leave an
+  orphaned file under `.storage`.
+
   `async_setup_periodic_refresh(entry)` is the one actual coordinator in this integration:
   it builds a `DataUpdateCoordinator[None]` (`config_entry=entry`, `update_method=`
   `self.async_refresh_camera_list`) on a `timedelta(minutes=self._update_interval_minutes)`
@@ -120,7 +150,10 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   signal anyway (so the sensor's `last_error` attribute updates), and returns `False`. Only
   a genuine misconfig (camera_id absent from the list) still raises. So `image.py` keeps
   its last good frame across an outage; `last_updated` (hence the sensor below) only
-  advances on a *successful* capture.
+  advances on a *successful* capture. `__init__` seeds `_attr_image_last_updated` from
+  `account.snapshots[camera_id].last_updated` directly (rather than waiting for the first
+  dispatcher signal) so a snapshot restored by `device.py`'s
+  `async_load_persisted_snapshots()` after a real HA restart renders immediately.
 - `sensor.py` — `IhanoiLastUpdateSensor(SensorEntity)`, one per camera,
   `SensorDeviceClass.TIMESTAMP` + `EntityCategory.DIAGNOSTIC`. `native_value` is the
   snapshot's `last_updated` (tz-aware `dt_util.now()`), with `last_error` exposed as an
