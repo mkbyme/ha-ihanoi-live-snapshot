@@ -54,9 +54,15 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   only ever invoked through `hass.async_add_executor_job`. Takes an optional `label`
   (the capture timestamp): when set, it's burned into the bottom-right corner via ffmpeg's
   `drawtext` filter — `_escape_drawtext` escapes the colons/backslashes so a `HH:MM:SS`
-  string survives the filtergraph parser. `drawtext` needs a font (libfreetype/fontconfig),
-  which may be absent in some HA containers, so a `drawtext`-failed decode is retried once
-  *without* the overlay rather than losing the snapshot entirely.
+  string survives the filtergraph parser. `drawtext` points at the bundled
+  `fonts/DejaVuSans.ttf` via `fontfile=` rather than a bare family name, so it only needs
+  libfreetype — not libfontconfig or any host-installed font. (Originally it relied on
+  fontconfig resolving a family name, which silently failed on font-less Alpine-based HA
+  Docker/HAOS containers — drawtext would fail and the no-overlay retry below would kick
+  in on *every* capture, so the timestamp label just never appeared; fontfile= sidesteps
+  that class of environment entirely.) If ffmpeg still can't use it for some reason, a
+  `drawtext`-failed decode is retried once *without* the overlay rather than losing the
+  snapshot entirely.
 - `api.py` — camera-list fetch/table-building (ported from
   `working/update_ihanoi_camera_list.py`) plus live snapshot capture (ported from
   `working/snapshot_ihanoi_livecamera.py`'s connect/send-hello/read-until-done loop). One
@@ -83,7 +89,15 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   configured interval is 0. Uses `coordinator.async_refresh()`, not
   `async_config_entry_first_refresh()`, on purpose — the bundled JSON is already a working
   fallback, so a network hiccup on this initial background refresh shouldn't block entry
-  setup with `ConfigEntryNotReady`.
+  setup with `ConfigEntryNotReady`. Immediately after that initial refresh it also calls
+  `coordinator.async_add_listener(lambda: None)` — a permanent no-op listener. This isn't
+  decorative: `DataUpdateCoordinator` only (re)arms its `update_interval` timer while
+  `self._listeners` is non-empty (see HA core's `update_coordinator.py`), and since no
+  entity observes this coordinator directly, without that listener the timer would arm
+  once (implicitly, via the manual `async_refresh()` above) and then never get rearmed —
+  the configured interval would silently only ever fire once, at startup. `config_entry=
+  entry` above means HA already wires `coordinator.async_shutdown()` into the entry's
+  unload, so this listener doesn't need manual cleanup.
 - `config_flow.py` — single step (`user`): a `SelectSelector` (DROPDOWN, `multiple=True`)
   built from the bundled camera list — no login/API call needed for setup, unlike the
   ToanThang sibling — plus a second `SelectSelector` (DROPDOWN, `custom_value=True`,
@@ -130,6 +144,10 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   exactly what the refresh button is for.
 - `strings.json` / `translations/{vi,en}.json` — config/options flow UI text, Vietnamese
   primary (per the sibling convention), keep both in sync.
+- `fonts/DejaVuSans.ttf` (+ `fonts/LICENSE`) — bundled so `hevc.py`'s `drawtext` timestamp
+  overlay works regardless of the host's fonts (see `hevc.py` above). DejaVu Sans is
+  public-domain/Bitstream-Vera-licensed and freely redistributable; `fonts/LICENSE` is that
+  license text, copied verbatim (attribution requirement, not a functional dependency).
 
 ## Commands
 

@@ -88,6 +88,14 @@ class IhanoiSnapshotAccount:
         # Don't use async_config_entry_first_refresh: the bundled ihanoi_camera.json is
         # already loaded as a fallback, so a network hiccup here shouldn't block entry setup.
         await coordinator.async_refresh()
+        # DataUpdateCoordinator only (re)arms its update_interval timer while it has at
+        # least one listener (see async_add_listener/_schedule_refresh in HA core's
+        # update_coordinator.py) -- no entity observes this coordinator directly, so
+        # without a listener the timer never gets armed past the manual async_refresh()
+        # above, and the configured interval is silently never honored again. This
+        # permanent no-op listener is what keeps it firing; config_entry=entry above
+        # means HA already cancels it via coordinator.async_shutdown() on unload/reload.
+        coordinator.async_add_listener(lambda: None)
         self.coordinator = coordinator
 
     async def async_refresh_camera_list(self) -> None:

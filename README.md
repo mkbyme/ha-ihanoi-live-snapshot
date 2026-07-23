@@ -17,23 +17,29 @@ không cần mở app/web iHanoi riêng để xem tình hình giao thông tại 
    camera list được làm mới), không polling liên tục tốn băng thông/CPU.
 4. Entity **nút cập nhật (`button`)** cho mỗi camera — gọi được qua automation, chụp lại
    ảnh mới ngay lập tức và lưu thời điểm cập nhật.
-5. Entity **nút "Update Camera List"** — làm mới bảng camera/`wss_url` từ API iHanoi
+5. **Ảnh luôn có nhãn thời gian** (`YYYY-MM-DD HH:MM:SS`) đóng ở góc dưới phải, chụp lúc
+   nào biết ngay lúc đó — không cần đoán qua timestamp của sensor riêng.
+6. Camera lỗi/mất kết nối **không làm mất ảnh cũ** — ảnh gần nhất vẫn giữ nguyên, tình
+   trạng lỗi được báo qua entity nhị phân + thuộc tính `last_error` (xem bảng dưới).
+7. Entity **nút "Update Camera List"** — làm mới bảng camera/`wss_url` từ API iHanoi
    (phiên `wss_url` có thời hạn sử dụng), đồng thời **tự động chụp lại ảnh cho tất cả
    camera đã chọn** trong cùng một lần bấm, không cần bấm thêm nút riêng từng camera.
-6. **Tự động làm mới danh sách camera theo chu kỳ** (mặc định 60 phút, chỉnh được
+8. **Tự động làm mới danh sách camera theo chu kỳ** (mặc định 60 phút, chỉnh được
    15/30/60/120/240 phút hoặc tắt hẳn) — phòng trường hợp `wss_url` hết hạn giữa hai lần
    bấm tay, mỗi lần làm mới cũng tự chụp lại ảnh như nút bấm ở trên.
-7. Có thể đổi danh sách camera đồng bộ và chu kỳ tự động làm mới sau khi cài đặt mà
+9. Có thể đổi danh sách camera đồng bộ và chu kỳ tự động làm mới sau khi cài đặt mà
    không cần xóa integration.
-8. Tên entity/device lấy từ tên camera trong danh sách iHanoi (rút gọn dưới 100 ký tự),
-   ví dụ `"P.V.Đồng - Bến Xe Nam Thăng Long - C192.12-PTZ"`.
+10. Tên entity/device lấy từ tên camera trong danh sách iHanoi (rút gọn dưới 100 ký tự),
+    ví dụ `"P.V.Đồng - Bến Xe Nam Thăng Long - C192.12-PTZ"`.
 
 ### Entity được tạo (mỗi camera một Device)
 
 | Entity | Loại | Ý nghĩa |
 |---|---|---|
-| `image.{ten_camera}` | Ảnh | Snapshot mới nhất chụp được từ live stream của camera |
+| `image.{ten_camera}` | Ảnh | Snapshot mới nhất chụp được từ live stream của camera, có nhãn thời gian |
 | `button.{ten_camera}_update` | Nút | Chụp lại ảnh ngay lập tức cho camera này (gọi qua automation) |
+| `sensor.{ten_camera}_last_update` | Cảm biến (Diagnostic) | Thời điểm chụp ảnh thành công gần nhất; thuộc tính `last_error` báo lỗi lần chụp gần nhất nếu có |
+| `binary_sensor.{ten_camera}_online` | Cảm biến nhị phân (Diagnostic, Connectivity) | `on` nếu lần chụp gần nhất thành công, `off` nếu camera lỗi/mất kết nối |
 | `button.ihanoi_update_camera_list` | Nút (dùng chung, EntityCategory: Config) | Làm mới bảng camera từ API iHanoi + chụp lại ảnh cho toàn bộ camera đã chọn |
 
 ## Yêu cầu trước khi cài đặt
@@ -73,6 +79,8 @@ Hoặc thêm thủ công:
             └── __init__.py
             └── image.py
             └── button.py
+            └── sensor.py
+            └── binary_sensor.py
             └── device.py
             └── api.py
             └── hevc.py
@@ -80,6 +88,7 @@ Hoặc thêm thủ công:
             └── const.py
             └── manifest.json
             └── ihanoi_camera.json
+            └── fonts/
             └── ...
     ```
 

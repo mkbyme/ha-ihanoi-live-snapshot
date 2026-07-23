@@ -17,11 +17,21 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
 
 START_CODE = b"\x00\x00\x00\x01"
 PREFIX_LEN = 12
+
+# Bundled so the timestamp overlay doesn't depend on the host having any fonts/fontconfig
+# installed at all -- `fontfile=` only needs libfreetype, unlike a bare family name (e.g.
+# "sans"), which needs libfontconfig *and* at least one font it can resolve to. Many HA
+# Docker/HAOS containers are Alpine-based and ship neither by default, which is what made
+# the timestamp label silently disappear (drawtext failed -> the no-overlay retry below
+# kicked in every time). DejaVu Sans is public-domain/Bitstream-Vera-licensed and freely
+# redistributable -- see fonts/LICENSE.
+_FONT_PATH = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
 
 NAL_VPS = 32
 NAL_SPS = 33
@@ -102,9 +112,11 @@ def decode_first_frame_to_png(annexb_bytes: bytes, label: str | None = None) -> 
     """Decode the first frame of an Annex-B HEVC elementary stream to PNG bytes via ffmpeg.
 
     If ``label`` is given (e.g. the capture timestamp), it's burned into the bottom-right
-    corner of the image via ffmpeg's ``drawtext`` filter. That filter needs a usable font
-    (libfreetype + fontconfig); if it isn't available in this environment we don't want to
-    lose the snapshot, so we retry once without the overlay and just log a warning.
+    corner of the image via ffmpeg's ``drawtext`` filter, pointed at the bundled
+    ``fonts/DejaVuSans.ttf`` via ``fontfile=`` so it only needs libfreetype -- not
+    libfontconfig or any host-installed font. If ffmpeg still can't use it for some reason,
+    we don't want to lose the snapshot over it, so we retry once without the overlay and
+    just log a warning.
 
     Blocking (spawns a subprocess) -- always call this through
     hass.async_add_executor_job, never directly from the event loop.
@@ -117,7 +129,8 @@ def decode_first_frame_to_png(annexb_bytes: bytes, label: str | None = None) -> 
     if label:
         args += [
             "-vf",
-            f"drawtext=text='{_escape_drawtext(label)}'"
+            f"drawtext=fontfile='{_escape_drawtext(str(_FONT_PATH))}'"
+            f":text='{_escape_drawtext(label)}'"
             ":fontcolor=white:fontsize=20:box=1:boxcolor=black@0.5"
             ":boxborderw=6:x=w-tw-10:y=h-th-10",
         ]
