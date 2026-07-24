@@ -229,11 +229,24 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   .last_updated` directly (rather than waiting for the first dispatcher signal) so a
   snapshot restored by `device.py`'s `async_load_persisted_snapshots()` after a real HA
   restart renders immediately.
-- `sensor.py` — `IhanoiLastUpdateSensor(SensorEntity)`, one per camera,
-  `SensorDeviceClass.TIMESTAMP` + `EntityCategory.DIAGNOSTIC`. `native_value` is the
-  snapshot's `last_updated` (tz-aware `dt_util.now()`), with `last_error` exposed as an
-  extra state attribute so automations can detect a down camera even though the button no
-  longer raises for that case. Same dispatcher-signal-driven update pattern as `image.py`.
+- `sensor.py` — two entity classes, both dispatcher-signal-driven like `image.py` (no
+  polling):
+  - `IhanoiLastUpdateSensor(SensorEntity)`, one per camera, `SensorDeviceClass.TIMESTAMP` +
+    `EntityCategory.DIAGNOSTIC`. `native_value` is the snapshot's `last_updated` (tz-aware
+    `dt_util.now()`), with `last_error` exposed as an extra state attribute so automations
+    can detect a down camera even though the button no longer raises for that case.
+  - `IhanoiCameraLocationSensor(SensorEntity)`, one per camera, meant to be added to a
+    Lovelace map card. No `EntityCategory`/`SensorDeviceClass` (a fixed street camera isn't
+    a `device_tracker` with home/not_home semantics) — `native_value` is the camera's
+    `address` string, and `extra_state_attributes` exposes `latitude`/`longitude` straight
+    from the camera's `lat`/`lng` fields in `ihanoi_camera.json` (omitted entirely if
+    either is `None`), which is all the map card needs to plot any entity, not just
+    `device_tracker`/`zone`/`person`. Also overrides the `entity_picture` property so the
+    map marker shows the last captured snapshot instead of a plain dot: rather than
+    duplicating `ImageEntity`'s access-token/URL logic, it looks up the paired preview
+    image entity (`image.{camera_id}_image_preview`, see `image.py`) via
+    `hass.states.get()` and returns *that* entity's own current `entity_picture`
+    attribute verbatim.
 - `button.py` — two entity classes: `IhanoiSnapshotUpdateButton` (one per camera — the
   "update trigger... callable via automation" from the task brief; `async_press()` just
   calls `account.async_update_camera(camera_id)`) and `IhanoiCameraListRefreshButton` (one
