@@ -29,8 +29,10 @@ from homeassistant.util import dt as dt_util
 from . import api
 from .const import (
     CAMERA_LIST_FILENAME,
+    CONF_CAMERA_QUALITY,
     CONF_DEVICE_MANUFACTURER,
     CONF_DEVICE_MODEL,
+    DEFAULT_JPEG_QUALITY,
     DOMAIN,
     MAX_NAME_LENGTH,
     SIGNAL_CAMERA_UPDATED,
@@ -44,6 +46,7 @@ STORAGE_VERSION = 1
 def _snapshot_to_json(snapshot: "CameraSnapshot") -> dict[str, Any]:
     return {
         "image": base64.b64encode(snapshot.image).decode("ascii") if snapshot.image else None,
+        "preview": base64.b64encode(snapshot.preview).decode("ascii") if snapshot.preview else None,
         "last_updated": snapshot.last_updated.isoformat() if snapshot.last_updated else None,
         "last_error": snapshot.last_error,
         "online": snapshot.online,
@@ -52,9 +55,11 @@ def _snapshot_to_json(snapshot: "CameraSnapshot") -> dict[str, Any]:
 
 def _snapshot_from_json(data: dict[str, Any]) -> "CameraSnapshot":
     image_b64 = data.get("image")
+    preview_b64 = data.get("preview")
     last_updated = data.get("last_updated")
     return CameraSnapshot(
         image=base64.b64decode(image_b64) if image_b64 else None,
+        preview=base64.b64decode(preview_b64) if preview_b64 else None,
         last_updated=dt_util.parse_datetime(last_updated) if last_updated else None,
         last_error=data.get("last_error"),
         online=data.get("online"),
@@ -70,6 +75,10 @@ async def async_remove_persisted_snapshots(hass: HomeAssistant, entry_id: str) -
 @dataclass
 class CameraSnapshot:
     image: bytes | None = None
+    preview: bytes | None = None
+    """Small (see const.PREVIEW_IMAGE_WIDTH/HEIGHT) JPEG thumbnail decoded alongside
+    `image` in the same capture -- backs the image_preview entity in image.py. Follows
+    the same never-null-on-failure rule as `image` (see async_update_camera below)."""
     last_updated: datetime | None = None
     last_error: str | None = None
     online: bool | None = None
@@ -88,10 +97,13 @@ class IhanoiSnapshotAccount:
         entry_id: str,
         camera_ids: list[str],
         update_interval_minutes: int = 0,
+        camera_quality: dict[str, int] | None = None,
     ) -> None:
         self.hass = hass
+        self.entry_id = entry_id
         self.camera_ids = camera_ids
         self._update_interval_minutes = update_interval_minutes
+        self._camera_quality = camera_quality or {}
         self._camera_list_path = Path(__file__).parent / CAMERA_LIST_FILENAME
         self.cameras: dict[str, dict[str, Any]] = {}
         self.snapshots: dict[str, CameraSnapshot] = {
@@ -235,8 +247,8 @@ class IhanoiSnapshotAccount:
         now = dt_util.now()
         label = now.strftime("%Y-%m-%d %H:%M:%S")
         try:
-            image = await api.async_capture_snapshot(
-                self.hass, camera["wss_url"], label=label
+            image, preview = await api.async_capture_snapshot(
+                self.hass, camera["wss_url"], label=label, quality=self.camera_quality(camera_id)
             )
         except Exception as err:  # noqa: BLE001 -- camera down / bad wss_url / decode fail
             snapshot.last_error = str(err)
@@ -262,12 +274,35 @@ class IhanoiSnapshotAccount:
             return False
 
         snapshot.image = image
+        snapshot.preview = preview
         snapshot.last_updated = now
         snapshot.last_error = None
         snapshot.online = True
         async_dispatcher_send(self.hass, f"{SIGNAL_CAMERA_UPDATED}_{camera_id}")
         await self._async_save_snapshots()
         return True
+
+    def camera_quality(self, camera_id: str) -> int:
+        """Configured JPEG compression quality (30-100%) for one camera, falling back to
+        DEFAULT_JPEG_QUALITY for a camera added before this setting existed."""
+        return self._camera_quality.get(camera_id, DEFAULT_JPEG_QUALITY)
+
+    async def async_set_camera_quality(self, camera_id: str, quality: int) -> None:
+        """Change one camera's JPEG quality from the number entity (number.py) and persist
+        it into the config entry's options, so it survives a reload/restart and stays in
+        sync with the config/options flow's "quality" step, which reads/writes the same
+        CONF_CAMERA_QUALITY option. Writing entry.options triggers __init__.py's
+        async_update_listener, which reloads the entry -- the same thing that already
+        happens when the options flow changes this setting, just triggered from an entity
+        instead of a form."""
+        self._camera_quality[camera_id] = quality
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return
+        self.hass.config_entries.async_update_entry(
+            entry,
+            options={**entry.options, CONF_CAMERA_QUALITY: dict(self._camera_quality)},
+        )
 
     def camera_display_name(self, camera_id: str) -> str:
         camera = self.cameras.get(camera_id)

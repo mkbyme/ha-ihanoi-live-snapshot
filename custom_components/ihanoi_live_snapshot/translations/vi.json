@@ -11,11 +11,16 @@
         "data_description": {
           "update_interval_minutes": "Danh sách camera chứa wss_url có thời hạn sử dụng; đặt 0 để tắt tự động cập nhật và chỉ dùng nút 'Update Camera List'."
         }
+      },
+      "quality": {
+        "title": "Tỉ lệ nén ảnh JPEG",
+        "description": "Đặt tỉ lệ nén JPEG (30-100%, cao hơn = ảnh nét hơn nhưng dung lượng lớn hơn) cho từng camera đã chọn. Áp dụng cho cả ảnh snapshot đầy đủ lẫn ảnh preview 640x360.\n{camera_list}"
       }
     },
     "error": {
       "no_cameras_selected": "Vui lòng chọn ít nhất một camera.",
-      "invalid_update_interval": "Chu kỳ cập nhật phải là một số nguyên không âm (phút)."
+      "invalid_update_interval": "Chu kỳ cập nhật phải là một số nguyên không âm (phút).",
+      "invalid_jpeg_quality": "Tỉ lệ nén JPEG phải là số nguyên từ 30 đến 100."
     },
     "abort": {
       "single_instance_allowed": "Chỉ được phép có một cấu hình cho tích hợp này."
@@ -32,11 +37,16 @@
         "data_description": {
           "update_interval_minutes": "Danh sách camera chứa wss_url có thời hạn sử dụng; đặt 0 để tắt tự động cập nhật và chỉ dùng nút 'Update Camera List'."
         }
+      },
+      "quality": {
+        "title": "Tỉ lệ nén ảnh JPEG",
+        "description": "Đặt tỉ lệ nén JPEG (30-100%, cao hơn = ảnh nét hơn nhưng dung lượng lớn hơn) cho từng camera đã chọn. Áp dụng cho cả ảnh snapshot đầy đủ lẫn ảnh preview 640x360.\n{camera_list}"
       }
     },
     "error": {
       "no_cameras_selected": "Vui lòng chọn ít nhất một camera.",
-      "invalid_update_interval": "Chu kỳ cập nhật phải là một số nguyên không âm (phút)."
+      "invalid_update_interval": "Chu kỳ cập nhật phải là một số nguyên không âm (phút).",
+      "invalid_jpeg_quality": "Tỉ lệ nén JPEG phải là số nguyên từ 30 đến 100."
     }
   }
 }

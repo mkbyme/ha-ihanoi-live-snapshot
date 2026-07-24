@@ -4,6 +4,21 @@ DOMAIN = "ihanoi_live_snapshot"
 
 CONF_CAMERAS = "cameras"
 
+# Per-camera JPEG compression quality, keyed by camera_id (dict of camera_id -> int).
+# Used both for the full-size snapshot and the preview thumbnail below, so there's one
+# knob per camera instead of two -- see device.py's IhanoiSnapshotAccount.camera_quality
+# and hevc.py's quality->ffmpeg qscale mapping.
+CONF_CAMERA_QUALITY = "camera_quality"
+DEFAULT_JPEG_QUALITY = 85
+MIN_JPEG_QUALITY = 30
+MAX_JPEG_QUALITY = 100
+
+# Small thumbnail rendered alongside the full-size snapshot (image_preview entity in
+# image.py), meant for dashboards/notifications where the full-resolution image is
+# unnecessary bandwidth.
+PREVIEW_IMAGE_WIDTH = 640
+PREVIEW_IMAGE_HEIGHT = 360
+
 # How often (minutes) to auto re-fetch the camera list/wss_url table in the background,
 # on top of the manual "Update Camera List" button -- the wss_url session tokens embedded
 # in it expire, and a stale entry is what makes button.press/image capture start failing

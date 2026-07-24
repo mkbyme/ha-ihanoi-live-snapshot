@@ -33,6 +33,14 @@ PREFIX_LEN = 12
 # redistributable -- see fonts/LICENSE.
 _FONT_PATH = Path(__file__).parent / "fonts" / "DejaVuSans.ttf"
 
+# Quality-percent (30-100, user-facing) <-> ffmpeg mjpeg qscale (2=best, 31=worst) mapping.
+# Kept as plain constants here (not imported from const.py) so this module stays free of
+# any homeassistant/project-specific dependency -- see the module docstring.
+_QUALITY_PERCENT_MIN = 30
+_QUALITY_PERCENT_MAX = 100
+_FFMPEG_QSCALE_BEST = 2
+_FFMPEG_QSCALE_WORST = 31
+
 NAL_VPS = 32
 NAL_SPS = 33
 NAL_PPS = 34
@@ -108,8 +116,26 @@ def _run_ffmpeg(args: list[str], annexb_bytes: bytes) -> subprocess.CompletedPro
     )
 
 
-def decode_first_frame_to_png(annexb_bytes: bytes, label: str | None = None) -> bytes:
-    """Decode the first frame of an Annex-B HEVC elementary stream to PNG bytes via ffmpeg.
+def _quality_percent_to_ffmpeg_qscale(quality: int) -> int:
+    """Map a user-facing 30-100% quality slider to ffmpeg's mjpeg -q:v qscale range
+    (2=best/largest, 31=worst/smallest) -- linear, inverted since qscale runs the
+    opposite direction of "quality"."""
+    quality = max(_QUALITY_PERCENT_MIN, min(_QUALITY_PERCENT_MAX, quality))
+    span = _QUALITY_PERCENT_MAX - _QUALITY_PERCENT_MIN
+    fraction = (_QUALITY_PERCENT_MAX - quality) / span
+    qscale = _FFMPEG_QSCALE_BEST + fraction * (_FFMPEG_QSCALE_WORST - _FFMPEG_QSCALE_BEST)
+    return round(qscale)
+
+
+def decode_first_frame_to_image(
+    annexb_bytes: bytes,
+    label: str | None = None,
+    quality: int | None = None,
+    size: tuple[int, int] | None = None,
+) -> bytes:
+    """Decode the first frame of an Annex-B HEVC elementary stream via ffmpeg, to JPEG
+    bytes compressed at ``quality`` percent (30-100; see
+    ``_quality_percent_to_ffmpeg_qscale``) if given, otherwise lossless PNG.
 
     If ``label`` is given (e.g. the capture timestamp), it's burned into the bottom-right
     corner of the image via ffmpeg's ``drawtext`` filter, pointed at the bundled
@@ -118,22 +144,36 @@ def decode_first_frame_to_png(annexb_bytes: bytes, label: str | None = None) -> 
     we don't want to lose the snapshot over it, so we retry once without the overlay and
     just log a warning.
 
+    If ``size`` (width, height) is given, the frame is downscaled to it via ffmpeg's
+    ``scale`` filter (applied before ``drawtext``, so the overlay is positioned/sized for
+    the final image) -- used for the small preview thumbnail.
+
     Blocking (spawns a subprocess) -- always call this through
     hass.async_add_executor_job, never directly from the event loop.
     """
     head = ["ffmpeg", "-y", "-v", "error", "-f", "hevc", "-i", "pipe:0",
             "-frames:v", "1", "-update", "1"]
-    tail = ["-f", "image2", "-c:v", "png", "pipe:1"]
+    if quality is not None:
+        qscale = _quality_percent_to_ffmpeg_qscale(quality)
+        tail = ["-f", "image2", "-c:v", "mjpeg", "-q:v", str(qscale), "pipe:1"]
+    else:
+        tail = ["-f", "image2", "-c:v", "png", "pipe:1"]
 
-    args = list(head)
+    filters = []
+    if size:
+        width, height = size
+        filters.append(f"scale={width}:{height}")
     if label:
-        args += [
-            "-vf",
+        filters.append(
             f"drawtext=fontfile='{_escape_drawtext(str(_FONT_PATH))}'"
             f":text='{_escape_drawtext(label)}'"
             ":fontcolor=white:fontsize=20:box=1:boxcolor=black@0.5"
-            ":boxborderw=6:x=w-tw-10:y=h-th-10",
-        ]
+            ":boxborderw=6:x=w-tw-10:y=h-th-10"
+        )
+
+    args = list(head)
+    if filters:
+        args += ["-vf", ",".join(filters)]
     args += tail
 
     proc = _run_ffmpeg(args, annexb_bytes)
@@ -142,7 +182,12 @@ def decode_first_frame_to_png(annexb_bytes: bytes, label: str | None = None) -> 
             "ffmpeg drawtext overlay failed (%s); decoding without the timestamp label.",
             proc.stderr.decode(errors="replace").strip(),
         )
-        proc = _run_ffmpeg(head + tail, annexb_bytes)
+        fallback_args = list(head)
+        if size:
+            width, height = size
+            fallback_args += ["-vf", f"scale={width}:{height}"]
+        fallback_args += tail
+        proc = _run_ffmpeg(fallback_args, annexb_bytes)
 
     if proc.returncode != 0:
         raise RuntimeError(

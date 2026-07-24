@@ -17,8 +17,16 @@ import aiohttp
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .const import API_URL, CLIENT_HELLO, DEFAULT_CAPTURE_TIMEOUT, WS_USER_AGENT
-from .hevc import KeyframeCollector, build_annexb, decode_first_frame_to_png
+from .const import (
+    API_URL,
+    CLIENT_HELLO,
+    DEFAULT_CAPTURE_TIMEOUT,
+    DEFAULT_JPEG_QUALITY,
+    PREVIEW_IMAGE_HEIGHT,
+    PREVIEW_IMAGE_WIDTH,
+    WS_USER_AGENT,
+)
+from .hevc import KeyframeCollector, build_annexb, decode_first_frame_to_image
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,10 +92,13 @@ async def async_capture_snapshot(
     wss_url: str,
     timeout: float = DEFAULT_CAPTURE_TIMEOUT,
     label: str | None = None,
-) -> bytes:
+    quality: int = DEFAULT_JPEG_QUALITY,
+) -> tuple[bytes, bytes]:
     """Open the camera's live WebSocket, collect exactly one full keyframe (stopping the
-    instant it's assembled), and decode it to PNG bytes. When ``label`` is given it's burned
-    into the image as a timestamp overlay (see hevc.decode_first_frame_to_png)."""
+    instant it's assembled), and decode it to JPEG bytes twice: once full-size, once
+    downscaled to a small preview thumbnail -- both compressed at ``quality`` percent
+    (see hevc.decode_first_frame_to_image). When ``label`` is given it's burned into both
+    as a timestamp overlay. Returns (image_bytes, preview_bytes)."""
     session = async_get_clientsession(hass)
     collector = KeyframeCollector()
 
@@ -106,4 +117,14 @@ async def async_capture_snapshot(
         raise RuntimeError("Never saw a VPS NAL (type 32) before the connection ended.")
 
     annexb = build_annexb(collector.nals)
-    return await hass.async_add_executor_job(decode_first_frame_to_png, annexb, label)
+    image = await hass.async_add_executor_job(
+        decode_first_frame_to_image, annexb, label, quality, None
+    )
+    preview = await hass.async_add_executor_job(
+        decode_first_frame_to_image,
+        annexb,
+        label,
+        quality,
+        (PREVIEW_IMAGE_WIDTH, PREVIEW_IMAGE_HEIGHT),
+    )
+    return image, preview

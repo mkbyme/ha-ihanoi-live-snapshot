@@ -4,7 +4,7 @@
 # this file — it reads custom_components/ihanoi_live_snapshot/manifest.json's
 # "requirements" array instead, which is intentionally left empty: aiohttp
 # and voluptuous already ship with Home Assistant core, so they don't need to
-# be declared there, and ffmpeg (required by hevc.decode_first_frame_to_png)
+# be declared there, and ffmpeg (required by hevc.decode_first_frame_to_image)
 # is a system binary that pip can't install at all.
 #
 # Install these locally only if you want to import/exercise this repo's code

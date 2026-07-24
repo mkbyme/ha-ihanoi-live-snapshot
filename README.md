@@ -31,12 +31,23 @@ không cần mở app/web iHanoi riêng để xem tình hình giao thông tại 
    không cần xóa integration.
 10. Tên entity/device lấy từ tên camera trong danh sách iHanoi (rút gọn dưới 100 ký tự),
     ví dụ `"P.V.Đồng - Bến Xe Nam Thăng Long - C192.12-PTZ"`.
+11. **Ảnh được nén JPEG thay vì lưu RAW/PNG**, với **tỉ lệ nén (30-100%) chỉnh được riêng
+    cho từng camera** — camera nào cần ảnh nét hơn thì tăng %, camera nào chỉ cần xem
+    nhanh thì giảm % để tiết kiệm dung lượng/băng thông.
+12. Mỗi camera có thêm entity **ảnh preview (`image_preview`)** kích thước nhỏ (640x360 px)
+    bên cạnh ảnh gốc — tiện cho dashboard/thông báo không cần độ phân giải đầy đủ. Ảnh
+    preview cập nhật/giữ ảnh cũ khi lỗi giống hệt luồng của ảnh chính.
+13. Entity **điều khiển tỉ lệ nén (`number`)** cho mỗi camera — chỉnh trực tiếp trên
+    dashboard/qua automation mà không cần vào Settings > Configure, giá trị đồng bộ hai
+    chiều với bước "Tỉ lệ nén ảnh JPEG" trong config/options flow.
 
 ### Entity được tạo (mỗi camera một Device)
 
 | Entity | Loại | Ý nghĩa |
 |---|---|---|
-| `image.{ten_camera}` | Ảnh | Snapshot mới nhất chụp được từ live stream của camera, có nhãn thời gian |
+| `image.{ten_camera}` | Ảnh | Snapshot mới nhất (JPEG, nén theo tỉ lệ đã cấu hình) chụp được từ live stream của camera, có nhãn thời gian |
+| `image.{ten_camera}_preview` | Ảnh | Bản thu nhỏ 640x360 px của snapshot ở trên, cùng thời điểm chụp |
+| `number.{ten_camera}_quality` | Số (Config) | Tỉ lệ nén JPEG (30-100%) của camera này, chỉnh trực tiếp không cần vào Configure |
 | `button.{ten_camera}_update` | Nút | Chụp lại ảnh ngay lập tức cho camera này (gọi qua automation) |
 | `sensor.{ten_camera}_last_update` | Cảm biến (Diagnostic) | Thời điểm chụp ảnh thành công gần nhất; thuộc tính `last_error` báo lỗi lần chụp gần nhất nếu có |
 | `binary_sensor.{ten_camera}_online` | Cảm biến nhị phân (Diagnostic, Connectivity) | `on` nếu lần chụp gần nhất thành công, `off` nếu camera lỗi/mất kết nối |
@@ -46,8 +57,8 @@ không cần mở app/web iHanoi riêng để xem tình hình giao thông tại 
 
 ### `ffmpeg` trên PATH của máy chạy Home Assistant
 
-Integration giải mã khung hình HEVC (keyframe) thành PNG bằng cách gọi CLI `ffmpeg` như
-một subprocess — đây là binary hệ thống, **không** cài được qua `pip`/`manifest.json`
+Integration giải mã khung hình HEVC (keyframe) thành JPEG (nén theo tỉ lệ cấu hình cho
+từng camera) bằng cách gọi CLI `ffmpeg` như một subprocess — đây là binary hệ thống, **không** cài được qua `pip`/`manifest.json`
 `requirements`. Nếu chạy Home Assistant OS/Supervised, `ffmpeg` thường đã có sẵn; nếu chạy
 Core/venv tự cài, cần đảm bảo `ffmpeg` có trong `PATH` trước khi dùng nút cập nhật ảnh,
 nếu không nút bấm sẽ báo lỗi rõ ràng (`RuntimeError` từ `ffmpeg`) thay vì treo im lặng.
@@ -104,16 +115,18 @@ Hoặc tìm thủ công: **Settings > Devices & Services > Add Integration** →
   cùng integration, không cần gọi API lúc này).
 - **Chu kỳ tự động cập nhật danh sách camera (phút)**: mặc định 60 phút; đặt `0` để tắt
   hẳn, chỉ dùng nút "Update Camera List" khi cần.
+- Ở bước tiếp theo: **Tỉ lệ nén ảnh JPEG (30-100%)** cho từng camera vừa chọn (mặc định
+  85%) — áp dụng cho cả ảnh snapshot đầy đủ lẫn ảnh preview 640x360.
 
-Sau khi xác nhận, mỗi camera được chọn sẽ xuất hiện như một Device riêng, gồm entity ảnh
-và nút cập nhật ở trên. Bấm nút cập nhật (hoặc gọi qua automation) để có snapshot đầu
-tiên — ảnh sẽ trống cho tới khi được chụp lần đầu.
+Sau khi xác nhận, mỗi camera được chọn sẽ xuất hiện như một Device riêng, gồm entity ảnh,
+entity ảnh preview và nút cập nhật ở trên. Bấm nút cập nhật (hoặc gọi qua automation) để
+có snapshot đầu tiên — ảnh sẽ trống cho tới khi được chụp lần đầu.
 
-### Thay đổi danh sách camera / chu kỳ cập nhật sau khi cài đặt
+### Thay đổi danh sách camera / chu kỳ cập nhật / tỉ lệ nén sau khi cài đặt
 
 Vào **Settings → Devices & Services → iHanoi Live Snapshot → Configure** để chỉnh lại
-danh sách camera đồng bộ hoặc chu kỳ tự động làm mới mà không cần xóa và cài lại
-integration.
+danh sách camera đồng bộ, chu kỳ tự động làm mới, hoặc tỉ lệ nén JPEG từng camera mà
+không cần xóa và cài lại integration.
 
 [hacs]: https://github.com/custom-components/hacs
 [hacs-badge]: https://img.shields.io/badge/HACS-custom-0468BF.svg?style=for-the-badge

@@ -11,11 +11,16 @@
         "data_description": {
           "update_interval_minutes": "The camera list's wss_url session tokens expire; set to 0 to disable auto-refresh and rely only on the 'Update Camera List' button."
         }
+      },
+      "quality": {
+        "title": "JPEG compression quality",
+        "description": "Set the JPEG compression quality (30-100%, higher = sharper but larger) for each selected camera. Applies to both the full-size snapshot and the 640x360 preview image.\n{camera_list}"
       }
     },
     "error": {
       "no_cameras_selected": "Please select at least one camera.",
-      "invalid_update_interval": "Update interval must be a non-negative whole number of minutes."
+      "invalid_update_interval": "Update interval must be a non-negative whole number of minutes.",
+      "invalid_jpeg_quality": "JPEG quality must be a whole number between 30 and 100."
     },
     "abort": {
       "single_instance_allowed": "[%key:common::config_flow::abort::single_instance_allowed%]"
@@ -32,11 +37,16 @@
         "data_description": {
           "update_interval_minutes": "The camera list's wss_url session tokens expire; set to 0 to disable auto-refresh and rely only on the 'Update Camera List' button."
         }
+      },
+      "quality": {
+        "title": "JPEG compression quality",
+        "description": "Set the JPEG compression quality (30-100%, higher = sharper but larger) for each selected camera. Applies to both the full-size snapshot and the 640x360 preview image.\n{camera_list}"
       }
     },
     "error": {
       "no_cameras_selected": "Please select at least one camera.",
-      "invalid_update_interval": "Update interval must be a non-negative whole number of minutes."
+      "invalid_update_interval": "Update interval must be a non-negative whole number of minutes.",
+      "invalid_jpeg_quality": "JPEG quality must be a whole number between 30 and 100."
     }
   }
 }

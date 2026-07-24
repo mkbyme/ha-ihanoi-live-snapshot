@@ -23,19 +23,22 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    """One image entity per selected camera."""
+    """One image entity + one small preview image entity per selected camera."""
     account: IhanoiSnapshotAccount = hass.data[DOMAIN][entry.entry_id]
 
-    async_add_entities(
-        IhanoiSnapshotImage(hass, account, camera_id) for camera_id in account.camera_ids
-    )
+    entities: list[ImageEntity] = []
+    for camera_id in account.camera_ids:
+        entities.append(IhanoiSnapshotImage(hass, account, camera_id))
+        entities.append(IhanoiSnapshotPreviewImage(hass, account, camera_id))
+    async_add_entities(entities)
 
 
 class IhanoiSnapshotImage(ImageEntity):
-    """The last snapshot captured for one camera."""
+    """The last snapshot captured for one camera, compressed to JPEG at that camera's
+    configured quality (see device.py's IhanoiSnapshotAccount.camera_quality)."""
 
     _attr_should_poll = False
-    _attr_content_type = "image/png"
+    _attr_content_type = "image/jpeg"
 
     def __init__(self, hass: HomeAssistant, account: IhanoiSnapshotAccount, camera_id: str) -> None:
         super().__init__(hass)
@@ -76,3 +79,52 @@ class IhanoiSnapshotImage(ImageEntity):
 
     async def async_image(self) -> bytes | None:
         return self._account.snapshots[self._camera_id].image
+
+
+class IhanoiSnapshotPreviewImage(ImageEntity):
+    """A small (see const.PREVIEW_IMAGE_WIDTH/HEIGHT) thumbnail of the last snapshot,
+    decoded alongside the full-size one in the same capture (see api.async_capture_snapshot).
+    Follows the exact same dispatcher-driven update / never-null-on-failure flow as
+    IhanoiSnapshotImage above -- a down camera keeps its last preview frame instead of
+    going blank."""
+
+    _attr_should_poll = False
+    _attr_content_type = "image/jpeg"
+
+    def __init__(self, hass: HomeAssistant, account: IhanoiSnapshotAccount, camera_id: str) -> None:
+        super().__init__(hass)
+        self._account = account
+        self._camera_id = camera_id
+        self._attr_unique_id = f"{camera_id}_image_preview".lower()
+        self.entity_id = f"{ENTITY_DOMAIN}.{camera_id}_image_preview".lower()
+        self._attr_image_last_updated = account.snapshots[camera_id].last_updated
+
+    @property
+    def name(self) -> str:
+        return f"{self._account.camera_display_name(self._camera_id)} Preview"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        return self._account.device_info(self._camera_id)
+
+    @property
+    def available(self) -> bool:
+        return self._camera_id in self._account.cameras
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                f"{SIGNAL_CAMERA_UPDATED}_{self._camera_id}",
+                self._handle_camera_updated,
+            )
+        )
+
+    @callback
+    def _handle_camera_updated(self) -> None:
+        self._attr_image_last_updated = self._account.snapshots[self._camera_id].last_updated
+        self.async_write_ha_state()
+
+    async def async_image(self) -> bytes | None:
+        return self._account.snapshots[self._camera_id].preview

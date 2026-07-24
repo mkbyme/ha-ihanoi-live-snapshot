@@ -3,10 +3,16 @@ from __future__ import annotations
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
-from .const import CONF_CAMERAS, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_MINUTES, DOMAIN
+from .const import (
+    CONF_CAMERA_QUALITY,
+    CONF_CAMERAS,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL_MINUTES,
+    DOMAIN,
+)
 from .device import IhanoiSnapshotAccount, async_remove_persisted_snapshots
 
-PLATFORMS = ["image", "button", "sensor", "binary_sensor"]
+PLATFORMS = ["image", "button", "sensor", "binary_sensor", "number"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -18,6 +24,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.entry_id,
         dataset[CONF_CAMERAS],
         dataset.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_MINUTES),
+        dataset.get(CONF_CAMERA_QUALITY, {}),
     )
     await account.async_load_persisted_snapshots()
     await account.async_load_camera_list()
