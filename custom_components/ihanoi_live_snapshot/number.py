@@ -67,3 +67,8 @@ class IhanoiCameraQualityNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         await self._account.async_set_camera_quality(self._camera_id, int(value))
+        # native_value reads straight from the account, which is already updated at this
+        # point -- write it now instead of waiting for the config-entry reload below (that
+        # reload is suppressed for this call anyway; see async_set_camera_quality) so the
+        # slider/history reflect the new value immediately.
+        self.async_write_ha_state()

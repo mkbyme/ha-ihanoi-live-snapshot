@@ -111,6 +111,7 @@ class IhanoiSnapshotAccount:
         }
         self.coordinator: DataUpdateCoordinator[None] | None = None
         self._store: Store = Store(hass, STORAGE_VERSION, f"{DOMAIN}_{entry_id}_snapshots")
+        self._suppress_next_reload = False
 
     async def async_load_camera_list(self) -> None:
         self.cameras = await self.hass.async_add_executor_job(
@@ -291,18 +292,35 @@ class IhanoiSnapshotAccount:
         """Change one camera's JPEG quality from the number entity (number.py) and persist
         it into the config entry's options, so it survives a reload/restart and stays in
         sync with the config/options flow's "quality" step, which reads/writes the same
-        CONF_CAMERA_QUALITY option. Writing entry.options triggers __init__.py's
-        async_update_listener, which reloads the entry -- the same thing that already
-        happens when the options flow changes this setting, just triggered from an entity
-        instead of a form."""
+        CONF_CAMERA_QUALITY option.
+
+        `self._camera_quality` (and therefore `camera_quality()`/the number entity's
+        `native_value`) is already updated below before touching the entry at all, so --
+        unlike an options-flow submission, which can also change the camera selection or
+        refresh interval and genuinely needs the platforms torn down and rebuilt -- there's
+        nothing left for a reload to accomplish here. Writing entry.options still fires
+        __init__.py's async_update_listener (HA calls every registered update listener on
+        any options write, there's no "skip listeners" argument), so `_suppress_next_reload`
+        tells that listener to skip the `async_reload` for this one write instead of
+        reloading the whole entry (and every one of its entities going momentarily
+        unavailable) just to persist a value the number entity already applied in memory."""
         self._camera_quality[camera_id] = quality
         entry = self.hass.config_entries.async_get_entry(self.entry_id)
         if entry is None:
             return
+        self._suppress_next_reload = True
         self.hass.config_entries.async_update_entry(
             entry,
             options={**entry.options, CONF_CAMERA_QUALITY: dict(self._camera_quality)},
         )
+
+    def consume_reload_suppression(self) -> bool:
+        """Called once by __init__.py's async_update_listener per options write. Returns
+        True (and clears the flag) if this write was already applied in-memory by
+        async_set_camera_quality above and therefore doesn't need a full entry reload."""
+        suppress = self._suppress_next_reload
+        self._suppress_next_reload = False
+        return suppress
 
     def camera_display_name(self, camera_id: str) -> str:
         camera = self.cameras.get(camera_id)

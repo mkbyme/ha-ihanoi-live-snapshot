@@ -45,9 +45,18 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Selected-camera list changed -- reload via HA's own reload machinery so
-    entry.state transitions correctly (see the toanthang_gps sibling integration for
-    why calling async_setup_entry/async_unload_entry directly instead is wrong)."""
+    """Options changed -- reload via HA's own reload machinery so entry.state transitions
+    correctly (see the toanthang_gps sibling integration for why calling
+    async_setup_entry/async_unload_entry directly instead is wrong).
+
+    Skipped for a quality-number-entity-triggered options write: device.py's
+    IhanoiSnapshotAccount.async_set_camera_quality already applies that change in memory
+    before persisting it, so tearing down and rebuilding every platform just to pick up a
+    value that's already live would only add a visible flicker/delay for no benefit. A
+    camera-selection/interval change from the config/options flow still reloads normally."""
+    account = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if account is not None and account.consume_reload_suppression():
+        return
     await hass.config_entries.async_reload(entry.entry_id)
 
 

@@ -112,10 +112,22 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   `hass.config_entries.async_update_entry(entry, options={...CONF_CAMERA_QUALITY: ...})`
   on the entry looked up via `self.entry_id` (stored in `__init__` for this purpose), so
   the option persists and stays the single source of truth the options flow's `quality`
-  step also reads/writes. That `async_update_entry` call fires `__init__.py`'s
-  `async_update_listener` same as any options-flow change would, so setting the number
-  entity reloads the whole config entry — an accepted tradeoff for reusing the existing
-  options-persistence path instead of a second one. `async_refresh_camera_list()` (re-fetch from the live API, overwrite the bundled
+  step also reads/writes. `async_update_entry` unconditionally fires `__init__.py`'s
+  `async_update_listener` (HA calls every registered update listener on any options write,
+  there's no way to opt out per-call) — but since `self._camera_quality` is already updated
+  in memory *before* that call, a full entry reload has nothing left to accomplish for this
+  particular write, and previously made the number entity's own state update laggy/invisible
+  (the slider only reflected the new value once the reload finished rebuilding every entity,
+  and `number.py`'s `async_set_native_value` wasn't calling `async_write_ha_state()` in the
+  meantime either). `async_set_camera_quality` now sets a one-shot `self._suppress_next_reload`
+  flag right before the `async_update_entry` call; `async_update_listener` consumes it via
+  `consume_reload_suppression()` and skips `async_reload` for that single notification, while
+  `number.py`'s `async_set_native_value` calls `self.async_write_ha_state()` right after
+  awaiting `async_set_camera_quality` so the slider (and its recorder history) reflect the
+  new value immediately instead of waiting on a reload that no longer happens. A
+  camera-selection/interval change from the config/options flow doesn't set that flag, so it
+  still reloads normally — that path really does need every platform rebuilt.
+  `async_refresh_camera_list()` (re-fetch from the live API, overwrite the bundled
   file in place, *then* `asyncio.gather()` an `async_update_camera()` for every selected
   camera_id so a stale/expired `wss_url` gets fixed and re-captured in the same call --
   per-camera capture failures are logged, not raised, so one flaky camera doesn't fail the
