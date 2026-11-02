@@ -165,6 +165,15 @@ pattern, just for a different purpose (refreshing a lookup table, not entity sta
   `__init__.py`'s `async_remove_entry` so uninstalling the integration doesn't leave an
   orphaned file under `.storage`.
 
+  Removing a camera from the UI: `__init__.py`'s `async_remove_config_entry_device` (the
+  hook that makes HA show a "Delete" button on a device page at all) maps the device's
+  `(DOMAIN, camera_id)` identifier to `async_remove_camera(camera_id)`, which drops it from
+  `CONF_CAMERAS`/`CONF_CAMERA_QUALITY` in `entry.options` (normal reload, no suppression)
+  and from the snapshot store; returns `False` for non-camera devices. Separately,
+  `async_setup_entry` calls `_async_remove_stale_devices` to detach devices whose camera_id
+  is no longer *selected* (deselected via the options flow). Both key off the user's
+  selection only, never the live API list, so the keep-offline-cameras rule above holds.
+
   `async_setup_periodic_refresh(entry)` is the one actual coordinator in this integration:
   it builds a `DataUpdateCoordinator[None]` (`config_entry=entry`, `update_method=`
   `self.async_refresh_camera_list`) on a `timedelta(minutes=self._update_interval_minutes)`

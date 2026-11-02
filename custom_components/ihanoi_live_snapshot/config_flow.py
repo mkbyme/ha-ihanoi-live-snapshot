@@ -238,6 +238,11 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         current = self._config_entry.options.get(
             CONF_CAMERAS, self._config_entry.data.get(CONF_CAMERAS, [])
         )
+        # A selected camera can be absent from the bundled list (e.g. it dropped off the
+        # live API before the carry-over in device.py existed) -- still offer it as an
+        # option, otherwise it can't be seen, let alone unticked, in this dropdown.
+        for camera_id in current:
+            self._cameras.setdefault(camera_id, {})
         current_interval = self._config_entry.options.get(
             CONF_UPDATE_INTERVAL,
             self._config_entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_MINUTES),

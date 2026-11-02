@@ -30,6 +30,7 @@ from . import api
 from .const import (
     CAMERA_LIST_FILENAME,
     CONF_CAMERA_QUALITY,
+    CONF_CAMERAS,
     CONF_DEVICE_MANUFACTURER,
     CONF_DEVICE_MODEL,
     DEFAULT_JPEG_QUALITY,
@@ -312,6 +313,36 @@ class IhanoiSnapshotAccount:
         self.hass.config_entries.async_update_entry(
             entry,
             options={**entry.options, CONF_CAMERA_QUALITY: dict(self._camera_quality)},
+        )
+
+    async def async_remove_camera(self, camera_id: str) -> None:
+        """Drop one camera from this entry, called from __init__.py's
+        async_remove_config_entry_device (the device page's "Delete" button). Removes it
+        from CONF_CAMERAS/CONF_CAMERA_QUALITY in entry.options -- the same place the
+        options flow writes, so its camera dropdown stays in sync -- and from the
+        persisted snapshot cache. That options write reloads the entry normally
+        (no reload suppression here), so the platforms are rebuilt without this camera;
+        once it's no longer selected, async_refresh_camera_list also stops carrying it
+        over when it's missing from the live API."""
+        self.snapshots.pop(camera_id, None)
+        had_quality = self._camera_quality.pop(camera_id, None) is not None
+        await self._async_save_snapshots()
+
+        entry = self.hass.config_entries.async_get_entry(self.entry_id)
+        if entry is None:
+            return
+        current = entry.options.get(CONF_CAMERAS, entry.data.get(CONF_CAMERAS, []))
+        if camera_id not in current and not had_quality:
+            # Orphaned device of an already-deselected camera: nothing to persist, and
+            # an options write would only trigger a pointless reload.
+            return
+        self.hass.config_entries.async_update_entry(
+            entry,
+            options={
+                **entry.options,
+                CONF_CAMERAS: [cid for cid in current if cid != camera_id],
+                CONF_CAMERA_QUALITY: dict(self._camera_quality),
+            },
         )
 
     def consume_reload_suppression(self) -> bool:
